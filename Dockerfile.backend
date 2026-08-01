@@ -1,5 +1,4 @@
-# ── Stage 1: compilar whisper.cpp ─────────────────────────────────────────────
-FROM debian:bookworm-slim AS whisper-builder
+﻿FROM debian:bookworm-slim AS whisper-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential ca-certificates \
@@ -8,18 +7,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp /tmp/whisper && \
     cmake -S /tmp/whisper -B /tmp/whisper/build \
           -DCMAKE_BUILD_TYPE=Release \
-          -DGGML_NATIVE=OFF \
-          -DBUILD_SHARED_LIBS=OFF \
-          -DCMAKE_C_FLAGS="-march=armv8-a" \
-          -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+          -DGGML_NATIVE=ON \
+          -DBUILD_SHARED_LIBS=OFF && \
     cmake --build /tmp/whisper/build --config Release -j$(nproc)
 
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# Stage 2: runtime
 FROM python:3.12-slim
 
 # Dependencias de sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl \
+    ffmpeg curl wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Binario de whisper desde el stage anterior
@@ -37,13 +34,16 @@ RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
 
 WORKDIR /app
 
-# Instalar dependencias primero (mejor cache de Docker)
+# Instalar dependencias primero
 COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root --only main
 
-# Entrypoint: descarga modelo whisper si no existe, luego arranca servidor
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Copiar codigo fuente
+COPY . .
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Descargar modelo Whisper si no existe
+RUN mkdir -p /opt/whisper && \
+    test -f /opt/whisper/ggml-small.bin || \
+    wget -q https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin -O /opt/whisper/ggml-small.bin || true
+
 CMD ["uvicorn", "api.server:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
