@@ -49,7 +49,7 @@ async def upload_tracks(
         name = Path(file.filename or "track.mp3").name
         dest = dest_dir / name
         dest.write_bytes(await file.read())
-        uploaded.append(str(dest.relative_to(_LIBRARY)))
+        uploaded.append(str(dest.resolve().relative_to(_LIBRARY.resolve())))
     return {"uploaded": uploaded}
 
 
@@ -57,7 +57,7 @@ async def upload_tracks(
 def create_folder(name: str = Form(...), parent: str = Form("")) -> dict[str, str]:
     target = _safe_path(f"{parent}/{name}" if parent else name)
     target.mkdir(parents=True, exist_ok=True)
-    return {"path": str(target.relative_to(_LIBRARY))}
+    return {"path": str(target.relative_to(_LIBRARY.resolve()))}
 
 
 @router.get("/{path:path}/stream")
