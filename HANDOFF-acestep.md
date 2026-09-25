@@ -78,3 +78,49 @@ python3 skills/acestep-comfyui/scripts/acestep_comfy.py batch skills/acestep-com
 python3 skills/acestep-bg-music/scripts/bg_music.py generate --preset lofi-chill --out /tmp/bg
 python3 skills/acestep-post/scripts/post.py analyze /tmp/bg/*.mp3 --target bed
 ```
+
+## Atualização: varredura do `SrLoula/AI-Content-Automation-Engine-v2` (2026-09-25)
+
+O **v2 é o projeto ativo de verdade** (749 arquivos, HEAD `6207c1f` "Prepare project changes for new repository").
+O repositório `AI-Content-Automation-Engine` (v1) está **congelado**. Leia primeiro o `MASTER_CONTEXT.md` (2396 linhas),
+depois o `AGENT_CONTEXT.md` (5012 linhas). Vários agentes trabalham no repo: DeepSeek Harness, Codex e Claude Code.
+Clone nesta sessão: `/home/user/ai-content-automation-engine-v2`.
+
+### Como o v2 usa o ACE-Step (diferente do que as acestep-skills assumem)
+- Caminho principal: **servidor oficial** `openrouter.openrouter_api_server` na porta **8003**, com
+  `POST /v1/chat/completions` e `thinking: true` (LM ligado, obrigatório). Wrapper no app: `tools/audio_generation/ace_step_generator.py`.
+  O antigo wrapper da porta 8002, sem LM, degradava após ~3 min e não deve voltar.
+- O ComfyUI (porta 8188, `D:\Renan\IA\ComfyUI`) também tem `ace_step_1.5_turbo_aio.safetensors` e `acestep_v1.5_turbo.safetensors`.
+  O lote do Rooftop Cyberpunk foi gerado lá com **16 passos**, FLAC e ~163–176 s.
+- GPU com 16 GB: o **XL turbo não coube** junto com o LM (erro de KV cache) e foi apagado. O SFT estava planejado, mas não baixado.
+
+### Aprendizados validados pelo usuário (skill `generating-instrumental-music-ace-step` do v2)
+1. **Coerência cai depois de ~3 min**, mesmo com o LM. Use faixas de **160–185 s com duração aleatória** e crossfade na montagem.
+   → As acestep-skills usam `longs = 210 s`: **precisa corrigir**.
+2. **Um gênero principal + um modificador.** Empilhar gêneros faz o áudio colapsar em ruído.
+3. **Ordem das tags: gênero → clima → instrumentos**, usando o vocabulário real de produção do gênero.
+4. **Faixa estável: só `[Instrumental]`.** Marcadores de voz vazios (`[Verse]`, `[Chorus]`) podem gerar **silêncio**; múltiplas seções podem causar mudança brusca.
+5. **O timbre acústico é ponto fraco do turbo** (piano solo, cordas e baixo acústico soam artificiais). Mascarar com tape/vinyl ajuda no jazz, mas não salva piano solo nem orquestra.
+   → Presets das acestep-skills em risco: `finance-mindset` (felt piano), `stickman-explainer` (pizzicato, ukulele) e `epic-documentary` (orquestra).
+6. Leads "frenéticos" (guitarra solo, arpejo de synth) foram rejeitados; sax, Rhodes/piano elétrico e ambiência pura foram aprovados.
+7. Para relaxar: pentatônica maior / lídio, "consonant harmony, no dissonant intervals". É uma alavanca secundária.
+8. **O v2 diverge do tutorial oficial**: o usuário confirmou ao vivo que colocar o BPM **também como texto nas tags** ("80 bpm") ajudou. As acestep-skills dizem para não fazer isso. Decidir com A/B.
+9. Rooftop Cyberpunk: uma identidade sonora por lote (chill lo-fi downtempo, Rhodes, baixo arredondado, pads), BPM provisório de 74, curadoria por audição, `track_review.md` e só aprovar com o OK do usuário (skill `rooftop-cyberpunk-music-curation`).
+10. O servidor oficial só devolve `audios[0]` mesmo com `batch_size > 1`. Para variações, faça N requisições mudando só o `seed`.
+
+### Problemas do v1 que continuam no v2
+- `tools/video_editing/ffmpeg.py::add_background_music` (fluxo narrado, ~linha 1103): `amix` padrão, sem `normalize=0`, e **nenhum `loudnorm` em `tools/` ou `flows/`**. O vídeo final sai em ~−22 LUFS.
+  (O mix de SFX do Ambiente, ~linha 286, já usa `normalize=0` + `alimiter`.)
+- `api/routers/music.py` linhas 50 e 58: mesmo bug de `relative_to` (500 no upload para subpasta). O fix `f5930a9` só existe no v1.
+
+### Outros pontos do v2
+- `MASTER_CONTEXT.md §1` diz "v2 sem remote git"; agora ele está no GitHub, então isso ficou desatualizado. O README ainda aponta para o clone do `hans1801`.
+- Skills do v2: `automation-engine-status-analysis`, `debugging-ambient-audio-transitions`, `driving-comfyui-via-api`,
+  `generating-instrumental-music-ace-step`, `generating-music-yue2` (CC BY-NC, não comercial), `removing-vocals-comfyui`,
+  `rooftop-cyberpunk-music-curation`. Estão espelhadas em `.agents/skills` e `.claude/skills`; duas diferem entre os espelhos.
+- Spec mais nova: `docs/superpowers/specs/2026-09-24-ambient-audio-tail-analyzer.md` (helper implementado, não integrado).
+
+### Decisão pendente com o usuário
+Como conciliar as acestep-skills com o v2: (a) incorporar os aprendizados do v2 nas acestep-skills e adicionar um
+backend para o servidor oficial (porta 8003); (b) levar só o `post.py` e as correções de loudness para dentro do v2;
+(c) as duas coisas.
