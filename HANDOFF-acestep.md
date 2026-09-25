@@ -124,3 +124,48 @@ Clone nesta sessão: `/home/user/ai-content-automation-engine-v2`.
 Como conciliar as acestep-skills com o v2: (a) incorporar os aprendizados do v2 nas acestep-skills e adicionar um
 backend para o servidor oficial (porta 8003); (b) levar só o `post.py` e as correções de loudness para dentro do v2;
 (c) as duas coisas.
+
+## DECISÃO (2026-09-25): executar a opção 1 primeiro — ajustar as acestep-skills ao v2
+
+Depois vem a opção 2 (levar as correções de loudness, do music router e o `post.py` para dentro do v2). **Por onde começar após o `/clear`:**
+ler este handoff, abrir `/home/user/acestep-skills` (ou clonar `SrLoula/acestep-skills`) e, como referência, o v2
+(`SrLoula/AI-Content-Automation-Engine-v2`, arquivo `.claude/skills/generating-instrumental-music-ace-step/SKILL.md`,
+cujos aprendizados estão resumidos na seção anterior).
+
+### Plano da opção 1 (tarefas em ordem; commit por tarefa; testar com `tests/fake_comfy.py`)
+
+1. **Backend do servidor oficial (porta 8003)** em `skills/acestep-comfyui/scripts/acestep_comfy.py`:
+   - `--backend comfyui|official` (e `ACESTEP_BACKEND`), mais `--server` / `ACESTEP_SERVER_URL` (padrão `http://127.0.0.1:8003`).
+   - Contrato: `POST /v1/chat/completions` com `{"model":"acestep-v15-turbo","messages":[{"role":"user","content":<tags>}],
+     "audio_config":{"duration":s,"format":"mp3","instrumental":true},"thinking":true,"seed":<int>}`.
+     A resposta vem em `choices[0].message.audio[0].audio_url.url` como data URL base64 (mp3).
+   - Letra ou estrutura: o v2 passa a estrutura como `"lyrics"`. Confirmar o campo no `openrouter_api_server.py` do ACE-Step
+     (clone em scratchpad: `acestep/openrouter/`) antes de implementar. Confirmar também se `audio_config` aceita `bpm`/`key`.
+   - Variações: **N requisições mudando só o `seed`**, porque o servidor devolve só `audios[0]` mesmo com `batch_size`.
+   - `check` no backend oficial: `GET /v1/models`.
+   - Estender o `tests/fake_comfy.py` (ou criar `tests/fake_official.py`) com `/v1/chat/completions` e `/v1/models`.
+   - Documentar no SKILL.md quando usar cada backend. **O oficial é o padrão do v2 (LM `thinking` sempre ligado)**; o ComfyUI
+     serve para experimentos (scheduler, timbre, áudio-para-áudio) e para os lotes em que o usuário pedir ComfyUI.
+2. **Durações:** no `bg_music` o formato `longs` passa a sortear 160–185 s por faixa (`random.uniform`); o `shorts` continua em 75 s.
+   Avisar no `generate` quando a duração passar de 185 s ("coerência cai depois de ~3 min, gere faixas curtas e faça crossfade").
+3. **Presets (`skills/acestep-bg-music/presets.json`):** reescrever seguindo as regras do v2:
+   gênero principal primeiro → clima → instrumentos, **um gênero só**, vocabulário real do gênero e leads calmos (Rhodes, sax, pads).
+   Trocar ou mascarar os timbres acústicos (felt piano, pizzicato/ukulele, orquestra) com textura tape/vinyl/analog, ou
+   migrar para paletas que o turbo renderiza bem (lo-fi, synthwave, pads, piano elétrico). Continuar abaixo de 512 caracteres.
+   Adicionar um preset `rooftop-cyberpunk` coerente com a skill `rooftop-cyberpunk-music-curation` do v2
+   (chill lo-fi downtempo, Rhodes, baixo arredondado, bateria contida, pads sci-fi, 74 BPM provisório), marcado como experimental.
+4. **`acestep-prompting`:** incorporar as regras validadas (um gênero, ordem das tags, vocabulário, `[Instrumental]` único para
+   faixa estável, marcadores de voz vazios geram silêncio, leads frenéticos, linguagem de consonância, ponto fraco do timbre
+   acústico, teto de ~3 min). Registrar a **divergência do BPM na legenda** (tutorial diz não pôr; teste do usuário diz pôr)
+   e criar a flag `--bpm-in-tags` para A/B. Ajustar os exemplos (o lo-fi de exemplo usa `[Interlude]`/`[Main Theme]`; manter
+   só marcadores instrumentais).
+5. **A/B (`examples/ab-turbo.example.json`):** adicionar variantes `bpm-in-tags`, `16 steps` (usado no Rooftop via ComfyUI)
+   e `[Instrumental]` único contra estrutura com várias seções.
+6. **Documentação:** `docs/knowledge.md` e `docs/turbo-workflows.md` ganham a seção "Aprendizados validados no Engine v2",
+   com fonte na skill do v2. Registrar: o XL não cabe em 16 GB com o LM; o SFT está planejado; o turbo usa 8 passos no oficial
+   e 16 no lote do Rooftop no ComfyUI.
+7. **Curadoria:** citar no `acestep-bg-music` o fluxo de curadoria do v2 (identidade sonora por lote, audição de pares,
+   `track_review.md`, só aprovar com o OK do usuário) e o `audio_tail_analyzer` do v2 como complemento do `post.py analyze`.
+8. Atualizar README e este HANDOFF e fazer push na `main` do `acestep-skills`.
+
+Não mexer no v2 nesta etapa (isso é a opção 2).
